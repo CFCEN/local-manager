@@ -1,12 +1,14 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"local-dev-workspace/internal/filesystem"
 	"local-dev-workspace/internal/gitutil"
@@ -147,8 +149,119 @@ func (s *GitService) DeleteGroup(id int64) error {
 
 // --- Git Projects ---
 
-func (s *GitService) ListProjects() ([]model.GitProject, error) {
-	return s.repo.ListProjects()
+// ListProjects returns all git projects. groupName is always populated (cheap
+// DB join). When enrichStatus is true, each project's live git status and last
+// commit are computed with bounded concurrency and a per-repo timeout so a
+// broken repo cannot stall the whole request.
+func (s *GitService) ListProjects(enrichStatus bool) ([]model.GitProject, error) {
+	items, err := s.repo.ListProjects()
+	if err != nil {
+		return nil, err
+	}
+	if !enrichStatus || len(items) == 0 {
+		return items, nil
+	}
+
+	statuses := s.computeStatuses(collectPaths(items))
+	for i := range items {
+		if st, ok := statuses[items[i].Path]; ok {
+			items[i].Status = st.Status
+			items[i].LastCommit = st.LastCommit
+		}
+	}
+	return items, nil
+}
+
+// BatchStatus computes live git status/lastCommit for the given project IDs.
+func (s *GitService) BatchStatus(ids []int64) ([]model.GitProjectStatusItem, error) {
+	result := make([]model.GitProjectStatusItem, 0, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	type idPath struct {
+		id   int64
+		path string
+	}
+	var targets []idPath
+	for _, id := range ids {
+		p, err := s.repo.GetProjectByID(id)
+		if err != nil || p == nil {
+			// Unknown project → report UNKNOWN so the frontend can render something.
+			result = append(result, model.GitProjectStatusItem{ID: id, Status: "UNKNOWN"})
+			continue
+		}
+		targets = append(targets, idPath{id: id, path: p.Path})
+	}
+
+	paths := make([]string, 0, len(targets))
+	for _, t := range targets {
+		paths = append(paths, t.path)
+	}
+	statuses := s.computeStatuses(paths)
+	for _, t := range targets {
+		st := statuses[t.path]
+		if st.Status == "" {
+			st.Status = "UNKNOWN"
+		}
+		result = append(result, model.GitProjectStatusItem{ID: t.id, Status: st.Status, LastCommit: st.LastCommit})
+	}
+	return result, nil
+}
+
+type gitStatusResult struct {
+	Status     string
+	LastCommit string
+}
+
+// computeStatuses runs git status/last-commit for each unique path with a
+// bounded worker pool (concurrency 8) and a per-repo timeout.
+func (s *GitService) computeStatuses(paths []string) map[string]gitStatusResult {
+	const concurrency = 8
+	out := make(map[string]gitStatusResult, len(paths))
+
+	// De-duplicate paths.
+	unique := make([]string, 0, len(paths))
+	seen := make(map[string]bool)
+	for _, p := range paths {
+		if !seen[p] {
+			seen[p] = true
+			unique = append(unique, p)
+		}
+	}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, concurrency)
+
+	for _, p := range unique {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(path string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			ctx, cancel := context.WithTimeout(context.Background(), gitutil.DefaultGitTimeout)
+			defer cancel()
+
+			status := gitutil.GetStatusContext(ctx, path)
+			commit := gitutil.GetLastCommitContext(ctx, path)
+
+			mu.Lock()
+			out[path] = gitStatusResult{Status: status, LastCommit: commit}
+			mu.Unlock()
+		}(p)
+	}
+	wg.Wait()
+	return out
+}
+
+func collectPaths(items []model.GitProject) []string {
+	paths := make([]string, 0, len(items))
+	for i := range items {
+		paths = append(paths, items[i].Path)
+	}
+	return paths
 }
 
 func (s *GitService) GetProjectDetail(id int64) (*model.GitProjectDetail, error) {

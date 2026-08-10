@@ -1,12 +1,27 @@
 package filesystem
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+// DefaultTailMaxBytes caps how far back we read from the end of a file for tail.
+const DefaultTailMaxBytes int64 = 8 << 20 // 8MB
+
+// TailResult is the outcome of a line-based tail read.
+type TailResult struct {
+	Content       string
+	Size          int64
+	ModifiedAt    time.Time
+	TotalLines    int64
+	ReturnedLines int
+	Truncated     bool
+}
 
 // NormalizePath expands ~ and $HOME, returns absolute canonical path.
 func NormalizePath(p string) (string, error) {
@@ -58,6 +73,121 @@ func ReadFile(p string) (string, int64, time.Time, error) {
 		return "", 0, time.Time{}, err
 	}
 	return string(data), info.Size(), info.ModTime(), nil
+}
+
+// ReadTailLines returns the last n lines of a file, reading at most maxBytes
+// from the end (default 8MB) to stay memory-safe on huge files. It also counts
+// the total number of lines so callers can display "last N of total".
+// Handles: empty files, files shorter than n lines, no trailing newline,
+// CRLF line endings, and rejects binary (NUL-containing) content.
+func ReadTailLines(p string, n int, maxBytes int64) (*TailResult, error) {
+	if n < 0 {
+		n = 0
+	}
+	if maxBytes <= 0 {
+		maxBytes = DefaultTailMaxBytes
+	}
+
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("path is a directory, not a file: %s", p)
+	}
+	size := info.Size()
+	modTime := info.ModTime()
+
+	result := &TailResult{Size: size, ModifiedAt: modTime}
+	if size == 0 || n == 0 {
+		return result, nil
+	}
+
+	readSize := size
+	bytesTruncated := false
+	if readSize > maxBytes {
+		readSize = maxBytes
+		bytesTruncated = true
+	}
+
+	buf := make([]byte, readSize)
+	offset := size - readSize
+	if _, err := f.ReadAt(buf, offset); err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	if bytes.IndexByte(buf, 0) >= 0 {
+		return nil, fmt.Errorf("binary file not supported")
+	}
+
+	endsWithNewline := buf[len(buf)-1] == '\n'
+
+	// Count total lines only when we read the whole file; otherwise it's a lower bound.
+	var totalLines int64
+	if !bytesTruncated {
+		totalLines = int64(countNewlines(buf))
+		if !endsWithNewline {
+			totalLines++ // last line without trailing newline
+		}
+	}
+	result.TotalLines = totalLines
+
+	// If we started mid-file, drop the partial first line so we begin on a boundary.
+	start := 0
+	if offset > 0 {
+		if idx := bytes.IndexByte(buf, '\n'); idx >= 0 {
+			start = idx + 1
+		} else {
+			result.Truncated = true
+			return result, nil
+		}
+	}
+	window := buf[start:]
+
+	rawLines := bytes.Split(window, []byte{'\n'})
+	// Drop the trailing empty element produced by a final newline.
+	if len(rawLines) > 0 && len(rawLines[len(rawLines)-1]) == 0 {
+		rawLines = rawLines[:len(rawLines)-1]
+	}
+
+	lines := make([]string, 0, len(rawLines))
+	for _, ln := range rawLines {
+		lines = append(lines, string(bytes.TrimRight(ln, "\r")))
+	}
+
+	truncated := bytesTruncated
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+		truncated = true
+	}
+
+	content := strings.Join(lines, "\n")
+	if len(lines) > 0 && endsWithNewline {
+		content += "\n"
+	}
+
+	result.Content = content
+	result.ReturnedLines = len(lines)
+	result.Truncated = truncated
+	return result, nil
+}
+
+func countNewlines(b []byte) int {
+	count := 0
+	for {
+		idx := bytes.IndexByte(b, '\n')
+		if idx < 0 {
+			return count
+		}
+		count++
+		b = b[idx+1:]
+	}
 }
 
 // SafeWrite writes content to path atomically: backup → temp → rename.

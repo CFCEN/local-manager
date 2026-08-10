@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -177,11 +178,29 @@ func (h *LogHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 	tailStr := r.URL.Query().Get("tail")
 	tail := 0
 	if tailStr != "" {
-		tail, _ = strconv.Atoi(tailStr)
+		if v, err := strconv.Atoi(tailStr); err == nil {
+			tail = v
+		}
+	}
+	// Clamp requested line count to a sane range (0 = whole file).
+	if tail < 0 {
+		tail = 0
+	}
+	if tail > 10000 {
+		tail = 10000
 	}
 	content, err := h.svc.GetContent(id, tail)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error())
+		switch {
+		case errors.Is(err, service.ErrLogFileNotFound):
+			WriteError(w, http.StatusNotFound, ErrCodeLogFileNotFound, err.Error())
+		case errors.Is(err, service.ErrLogFileOnDiskMissing):
+			WriteError(w, http.StatusNotFound, ErrCodeFileNotFound, err.Error())
+		case errors.Is(err, service.ErrLogFileBinary):
+			WriteError(w, http.StatusBadRequest, ErrCodeFileNotReadable, err.Error())
+		default:
+			WriteError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error())
+		}
 		return
 	}
 	WriteSuccess(w, http.StatusOK, content)

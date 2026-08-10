@@ -1,10 +1,12 @@
 package gitutil
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ScanDirectory recursively finds .git repos under root up to maxDepth.
@@ -99,3 +101,46 @@ func GetLastCommit(repoPath string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// GetStatusContext is like GetStatus but honors a context deadline so a single
+// slow/broken repo cannot stall a batch request. Returns "UNKNOWN" on any
+// error or timeout.
+func GetStatusContext(ctx context.Context, repoPath string) string {
+	out, err := runGit(ctx, repoPath, "status", "--porcelain")
+	if err != nil {
+		return "UNKNOWN"
+	}
+	if len(strings.TrimSpace(out)) == 0 {
+		return "Clean"
+	}
+	out2, err := runGit(ctx, repoPath, "status", "-sb")
+	if err != nil {
+		return "Modified"
+	}
+	if strings.Contains(out2, "[ahead") {
+		return "Ahead"
+	}
+	if strings.Contains(out2, "[behind") {
+		return "Behind"
+	}
+	return "Modified"
+}
+
+// GetLastCommitContext is the context-aware variant of GetLastCommit.
+func GetLastCommitContext(ctx context.Context, repoPath string) string {
+	out, err := runGit(ctx, repoPath, "log", "-1", "--format=%h %s")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+func runGit(ctx context.Context, repoPath string, args ...string) (string, error) {
+	full := append([]string{"-C", repoPath}, args...)
+	cmd := exec.CommandContext(ctx, "git", full...)
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+// DefaultGitTimeout bounds a single git invocation during enrichment.
+const DefaultGitTimeout = 2 * time.Second

@@ -14,7 +14,9 @@ func NewGitRepo() *GitRepo { return &GitRepo{db: DB} }
 // --- Git Groups ---
 
 func (r *GitRepo) ListGroups() ([]model.GitGroup, error) {
-	rows, err := r.db.Query(`SELECT g.id, g.name, g.description, g.rag_path, g.index_path, g.created_at, g.updated_at, COUNT(p.id) as project_count
+	rows, err := r.db.Query(`SELECT g.id, g.name, g.description, g.rag_path, g.index_path, g.created_at, g.updated_at,
+		COUNT(p.id) as project_count,
+		(SELECT COUNT(*) FROM project_contexts c WHERE c.group_id = g.id) as context_count
 		FROM git_groups g LEFT JOIN git_projects p ON p.group_id = g.id GROUP BY g.id ORDER BY g.name`)
 	if err != nil {
 		return nil, err
@@ -23,7 +25,7 @@ func (r *GitRepo) ListGroups() ([]model.GitGroup, error) {
 	var items []model.GitGroup
 	for rows.Next() {
 		var g model.GitGroup
-		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.RAGPath, &g.IndexPath, &g.CreatedAt, &g.UpdatedAt, &g.ProjectCount); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.RAGPath, &g.IndexPath, &g.CreatedAt, &g.UpdatedAt, &g.ProjectCount, &g.ContextCount); err != nil {
 			return nil, err
 		}
 		items = append(items, g)
@@ -36,9 +38,11 @@ func (r *GitRepo) ListGroups() ([]model.GitGroup, error) {
 
 func (r *GitRepo) GetGroupByID(id int64) (*model.GitGroup, error) {
 	var g model.GitGroup
-	err := r.db.QueryRow(`SELECT g.id, g.name, g.description, g.rag_path, g.index_path, g.created_at, g.updated_at, COUNT(p.id) as project_count
+	err := r.db.QueryRow(`SELECT g.id, g.name, g.description, g.rag_path, g.index_path, g.created_at, g.updated_at,
+		COUNT(p.id) as project_count,
+		(SELECT COUNT(*) FROM project_contexts c WHERE c.group_id = g.id) as context_count
 		FROM git_groups g LEFT JOIN git_projects p ON p.group_id = g.id WHERE g.id=? GROUP BY g.id`, id).
-		Scan(&g.ID, &g.Name, &g.Description, &g.RAGPath, &g.IndexPath, &g.CreatedAt, &g.UpdatedAt, &g.ProjectCount)
+		Scan(&g.ID, &g.Name, &g.Description, &g.RAGPath, &g.IndexPath, &g.CreatedAt, &g.UpdatedAt, &g.ProjectCount, &g.ContextCount)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -73,7 +77,9 @@ func (r *GitRepo) DeleteGroup(id int64) error {
 // --- Git Projects ---
 
 func (r *GitRepo) ListProjects() ([]model.GitProject, error) {
-	rows, err := r.db.Query(`SELECT id, name, path, branch, remote, group_id, rag_path, index_path, created_at, updated_at FROM git_projects ORDER BY updated_at DESC`)
+	rows, err := r.db.Query(`SELECT p.id, p.name, p.path, p.branch, p.remote, p.group_id, COALESCE(g.name, '') AS group_name, p.rag_path, p.index_path, p.created_at, p.updated_at
+		FROM git_projects p LEFT JOIN git_groups g ON g.id = p.group_id
+		ORDER BY p.updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +87,7 @@ func (r *GitRepo) ListProjects() ([]model.GitProject, error) {
 	var items []model.GitProject
 	for rows.Next() {
 		var p model.GitProject
-		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Branch, &p.Remote, &p.GroupID, &p.RAGPath, &p.IndexPath, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Branch, &p.Remote, &p.GroupID, &p.GroupName, &p.RAGPath, &p.IndexPath, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, p)
@@ -150,7 +156,9 @@ func (r *GitRepo) DeleteProject(id int64) error {
 }
 
 func (r *GitRepo) ListProjectsByGroup(groupID int64) ([]model.GitProject, error) {
-	rows, err := r.db.Query(`SELECT id, name, path, branch, remote, group_id, rag_path, index_path, created_at, updated_at FROM git_projects WHERE group_id=? ORDER BY name`, groupID)
+	rows, err := r.db.Query(`SELECT p.id, p.name, p.path, p.branch, p.remote, p.group_id, COALESCE(g.name, '') AS group_name, p.rag_path, p.index_path, p.created_at, p.updated_at
+		FROM git_projects p LEFT JOIN git_groups g ON g.id = p.group_id
+		WHERE p.group_id=? ORDER BY p.name`, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +166,7 @@ func (r *GitRepo) ListProjectsByGroup(groupID int64) ([]model.GitProject, error)
 	var items []model.GitProject
 	for rows.Next() {
 		var p model.GitProject
-		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Branch, &p.Remote, &p.GroupID, &p.RAGPath, &p.IndexPath, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Branch, &p.Remote, &p.GroupID, &p.GroupName, &p.RAGPath, &p.IndexPath, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, p)

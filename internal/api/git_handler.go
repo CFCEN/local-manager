@@ -23,10 +23,12 @@ func registerGitRoutes(r *mux.Router, h *GitHandler) {
 	// Projects
 	r.HandleFunc("/git/projects", h.ListProjects).Methods("GET")
 	r.HandleFunc("/git/projects/scan", h.Scan).Methods("POST")
+	// Literal routes before {id}; id constrained to digits to avoid capture.
+	r.HandleFunc("/git/projects/status", h.BatchStatus).Methods("POST")
 	r.HandleFunc("/git/projects/batch/group", h.BatchAssignGroup).Methods("POST")
-	r.HandleFunc("/git/projects/{id}", h.GetProject).Methods("GET")
-	r.HandleFunc("/git/projects/{id}", h.UpdateProject).Methods("PUT")
-	r.HandleFunc("/git/projects/{id}", h.DeleteProject).Methods("DELETE")
+	r.HandleFunc("/git/projects/{id:[0-9]+}", h.GetProject).Methods("GET")
+	r.HandleFunc("/git/projects/{id:[0-9]+}", h.UpdateProject).Methods("PUT")
+	r.HandleFunc("/git/projects/{id:[0-9]+}", h.DeleteProject).Methods("DELETE")
 
 	// Groups
 	r.HandleFunc("/git/groups", h.ListGroups).Methods("GET")
@@ -57,7 +59,22 @@ func registerGitRoutes(r *mux.Router, h *GitHandler) {
 // --- Projects ---
 
 func (h *GitHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
-	items, err := h.svc.ListProjects()
+	enrich := r.URL.Query().Get("enrich") == "status"
+	items, err := h.svc.ListProjects(enrich)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error())
+		return
+	}
+	WriteList(w, items, int64(len(items)))
+}
+
+func (h *GitHandler) BatchStatus(w http.ResponseWriter, r *http.Request) {
+	var req model.BatchGitStatusRequest
+	if err := DecodeBody(r, &req); err != nil {
+		WriteError(w, http.StatusBadRequest, ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	items, err := h.svc.BatchStatus(req.IDs)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error())
 		return

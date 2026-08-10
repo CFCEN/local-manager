@@ -244,13 +244,16 @@ func (s *ApplicationService) Status(id int64) (*model.StatusResponse, error) {
 		return nil, fmt.Errorf("application not found")
 	}
 
+	return s.buildStatus(id, a), nil
+}
+
+// buildStatus computes the runtime status for an application. When the app is
+// not actively RUNNING, runtime-only fields (pid, commandName, startedAt,
+// uptime) are cleared so the frontend never shows stale "running" info on a
+// stopped app.
+func (s *ApplicationService) buildStatus(id int64, a *model.Application) *model.StatusResponse {
 	run, _ := s.repo.GetLatestRun(id)
 	status := "STOPPED"
-	var pid *int
-	var commandName string
-	var startedAt *time.Time
-	var uptime string
-
 	if run != nil {
 		if run.Status == "RUNNING" || run.Status == "STARTING" {
 			if run.PID != nil && s.pm.IsRunning(*run.PID) {
@@ -261,20 +264,35 @@ func (s *ApplicationService) Status(id int64) (*model.StatusResponse, error) {
 		} else {
 			status = run.Status
 		}
-		pid = run.PID
-		commandName = run.CommandName
-		startedAt = run.StartedAt
-		if run.StartedAt != nil && status == "RUNNING" {
-			uptime = time.Since(*run.StartedAt).Round(time.Second).String()
-		}
 	}
 
-	return &model.StatusResponse{
-		ID:          id,
-		PID:         pid,
-		CommandName: commandName,
-		Status:      status,
-		StartedAt:   startedAt,
-		Uptime:      uptime,
-	}, nil
+	resp := &model.StatusResponse{
+		ID:     id,
+		Status: status,
+	}
+
+	// Only expose runtime fields while genuinely running.
+	if status == "RUNNING" && run != nil {
+		resp.PID = run.PID
+		resp.CommandName = run.CommandName
+		resp.StartedAt = run.StartedAt
+		if run.StartedAt != nil {
+			resp.Uptime = time.Since(*run.StartedAt).Round(time.Second).String()
+		}
+	}
+	return resp
+}
+
+// StatusAll returns the runtime status for every application in one shot,
+// eliminating the per-app N+1 polling on the frontend.
+func (s *ApplicationService) StatusAll() ([]model.StatusResponse, error) {
+	apps, err := s.repo.List()
+	if err != nil {
+		return nil, err
+	}
+	items := make([]model.StatusResponse, 0, len(apps))
+	for i := range apps {
+		items = append(items, *s.buildStatus(apps[i].ID, &apps[i]))
+	}
+	return items, nil
 }

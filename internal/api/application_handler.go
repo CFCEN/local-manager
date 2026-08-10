@@ -21,13 +21,25 @@ func NewApplicationHandler(svc *service.ApplicationService) *ApplicationHandler 
 func registerApplicationRoutes(r *mux.Router, h *ApplicationHandler) {
 	r.HandleFunc("/applications", h.List).Methods("GET")
 	r.HandleFunc("/applications", h.Create).Methods("POST")
-	r.HandleFunc("/applications/{id}", h.Get).Methods("GET")
-	r.HandleFunc("/applications/{id}", h.Update).Methods("PUT")
-	r.HandleFunc("/applications/{id}", h.Delete).Methods("DELETE")
-	r.HandleFunc("/applications/{id}/start", h.Start).Methods("POST")
-	r.HandleFunc("/applications/{id}/stop", h.Stop).Methods("POST")
-	r.HandleFunc("/applications/{id}/restart", h.Restart).Methods("POST")
-	r.HandleFunc("/applications/{id}/status", h.Status).Methods("GET")
+	// Literal route must be registered before the {id} routes so it is not
+	// swallowed by the id matcher. The id matcher is also constrained to digits.
+	r.HandleFunc("/applications/status", h.StatusAll).Methods("GET")
+	r.HandleFunc("/applications/{id:[0-9]+}", h.Get).Methods("GET")
+	r.HandleFunc("/applications/{id:[0-9]+}", h.Update).Methods("PUT")
+	r.HandleFunc("/applications/{id:[0-9]+}", h.Delete).Methods("DELETE")
+	r.HandleFunc("/applications/{id:[0-9]+}/start", h.Start).Methods("POST")
+	r.HandleFunc("/applications/{id:[0-9]+}/stop", h.Stop).Methods("POST")
+	r.HandleFunc("/applications/{id:[0-9]+}/restart", h.Restart).Methods("POST")
+	r.HandleFunc("/applications/{id:[0-9]+}/status", h.Status).Methods("GET")
+}
+
+func (h *ApplicationHandler) StatusAll(w http.ResponseWriter, r *http.Request) {
+	items, err := h.svc.StatusAll()
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error())
+		return
+	}
+	WriteList(w, items, int64(len(items)))
 }
 
 func (h *ApplicationHandler) List(w http.ResponseWriter, r *http.Request) {

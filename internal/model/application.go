@@ -68,3 +68,31 @@ type StatusResponse struct {
 	StartedAt   *time.Time `json:"startedAt"`
 	Uptime      string     `json:"uptime,omitempty"`
 }
+
+// DashboardSummary is the aggregated payload for the dashboard page.
+type DashboardSummary struct {
+	ApplicationCount int                `json:"applicationCount"`
+	RunningCount     int                `json:"runningCount"`
+	GitProjectCount  int                `json:"gitProjectCount"`
+	LogFileCount     int                `json:"logFileCount"`
+	ConfigCount      int                `json:"configCount"`
+	RecentApps       []DashboardApp     `json:"recentApps"`
+	RecentProjects   []DashboardProject `json:"recentProjects"`
+}
+
+type DashboardApp struct {
+	ID               int64     `json:"id"`
+	Name             string    `json:"name"`
+	Path             string    `json:"path"`
+	Status           string    `json:"status"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+	WorkingDirectory string    `json:"workingDirectory"`
+}
+
+type DashboardProject struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Path      string    `json:"path"`
+	Status    string    `json:"status,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}

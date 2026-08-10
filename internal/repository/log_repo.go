@@ -14,7 +14,9 @@ func NewLogRepo() *LogRepo { return &LogRepo{db: DB} }
 // --- Log Groups ---
 
 func (r *LogRepo) ListGroups() ([]model.LogGroup, error) {
-	rows, err := r.db.Query(`SELECT id, name, description, created_at, updated_at FROM log_groups ORDER BY name`)
+	rows, err := r.db.Query(`SELECT g.id, g.name, g.description, g.created_at, g.updated_at, COUNT(f.id) AS file_count
+		FROM log_groups g LEFT JOIN log_files f ON f.group_id = g.id
+		GROUP BY g.id ORDER BY g.name`)
 	if err != nil {
 		return nil, err
 	}
@@ -22,7 +24,7 @@ func (r *LogRepo) ListGroups() ([]model.LogGroup, error) {
 	var items []model.LogGroup
 	for rows.Next() {
 		var g model.LogGroup
-		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.CreatedAt, &g.UpdatedAt, &g.FileCount); err != nil {
 			return nil, err
 		}
 		items = append(items, g)
@@ -70,7 +72,9 @@ func (r *LogRepo) DeleteGroup(id int64) error {
 // --- Log Files ---
 
 func (r *LogRepo) ListFiles() ([]model.LogFile, error) {
-	rows, err := r.db.Query(`SELECT id, name, path, group_id, description, created_at, updated_at FROM log_files ORDER BY updated_at DESC`)
+	rows, err := r.db.Query(`SELECT f.id, f.name, f.path, f.group_id, COALESCE(g.name, '') AS group_name, f.description, f.created_at, f.updated_at
+		FROM log_files f LEFT JOIN log_groups g ON g.id = f.group_id
+		ORDER BY f.updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +82,7 @@ func (r *LogRepo) ListFiles() ([]model.LogFile, error) {
 	var items []model.LogFile
 	for rows.Next() {
 		var f model.LogFile
-		if err := rows.Scan(&f.ID, &f.Name, &f.Path, &f.GroupID, &f.Description, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.Name, &f.Path, &f.GroupID, &f.GroupName, &f.Description, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, f)

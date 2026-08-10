@@ -1,7 +1,10 @@
 package service
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"local-dev-workspace/internal/filesystem"
 	"local-dev-workspace/internal/model"
@@ -129,31 +132,66 @@ func (s *LogService) DeleteFile(id int64) error {
 	return s.repo.DeleteFile(id)
 }
 
+// ErrLogFileNotFound is returned when the DB record is missing.
+var ErrLogFileNotFound = errors.New("log file not found")
+
+// ErrLogFileOnDiskMissing is returned when the DB record exists but the
+// underlying file is gone or unreadable on disk.
+var ErrLogFileOnDiskMissing = errors.New("log file not found on disk")
+
+// ErrLogFileBinary is returned when the target file appears to be binary.
+var ErrLogFileBinary = errors.New("log file is not a text file")
+
 func (s *LogService) GetContent(id int64, tail int) (*model.LogContent, error) {
 	f, err := s.repo.GetFileByID(id)
 	if err != nil {
 		return nil, err
 	}
 	if f == nil {
-		return nil, fmt.Errorf("log file not found")
+		return nil, ErrLogFileNotFound
 	}
 
-	content, size, modTime, err := filesystem.ReadFile(f.Path)
+	// tail <= 0 means "whole file". Fall back to the full read path.
+	if tail <= 0 {
+		content, size, modTime, err := filesystem.ReadFile(f.Path)
+		if err != nil {
+			if os.IsNotExist(err) || os.IsPermission(err) {
+				return nil, fmt.Errorf("%w: %v", ErrLogFileOnDiskMissing, err)
+			}
+			return nil, err
+		}
+		total := int64(strings.Count(content, "\n"))
+		if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+			total++
+		}
+		returned := int(total)
+		return &model.LogContent{
+			Content:       content,
+			Size:          size,
+			ModifiedAt:    modTime,
+			TotalLines:    total,
+			ReturnedLines: returned,
+			Truncated:     false,
+		}, nil
+	}
+
+	res, err := filesystem.ReadTailLines(f.Path, tail, filesystem.DefaultTailMaxBytes)
 	if err != nil {
+		if os.IsNotExist(err) || os.IsPermission(err) {
+			return nil, fmt.Errorf("%w: %v", ErrLogFileOnDiskMissing, err)
+		}
+		if strings.Contains(err.Error(), "binary file not supported") {
+			return nil, ErrLogFileBinary
+		}
 		return nil, err
 	}
 
-	// Apply tail if requested
-	if tail > 0 && len(content) > 0 {
-		runes := []rune(content)
-		if tail < len(runes) {
-			content = string(runes[len(runes)-tail:])
-		}
-	}
-
 	return &model.LogContent{
-		Content:    content,
-		Size:       size,
-		ModifiedAt: modTime,
+		Content:       res.Content,
+		Size:          res.Size,
+		ModifiedAt:    res.ModifiedAt,
+		TotalLines:    res.TotalLines,
+		ReturnedLines: res.ReturnedLines,
+		Truncated:     res.Truncated,
 	}, nil
 }

@@ -31,6 +31,7 @@ func NewRouter(cfg *config.AppConfig) *mux.Router {
 	appSvc := service.NewApplicationService(appRepo, pm, cfg.WorkspaceRoot)
 	gitSvc := service.NewGitService(gitRepo, cfg.WorkspaceRoot)
 	workspaceSvc := service.NewWorkspaceService(workspaceRepo, cfg.WorkspaceRoot)
+	dashboardSvc := service.NewDashboardService(appSvc, gitSvc, logSvc, configSvc)
 
 	// Monitor
 	monitor := process.NewApplicationMonitor(pm, appRepo)
@@ -42,6 +43,7 @@ func NewRouter(cfg *config.AppConfig) *mux.Router {
 	appH := NewApplicationHandler(appSvc)
 	gitH := NewGitHandler(gitSvc, workspaceSvc)
 	workspaceH := NewWorkspaceHandler(workspaceSvc)
+	dashboardH := NewDashboardHandler(dashboardSvc)
 
 	api := r.PathPrefix("/api").Subrouter()
 
@@ -50,6 +52,7 @@ func NewRouter(cfg *config.AppConfig) *mux.Router {
 	registerApplicationRoutes(api, appH)
 	registerGitRoutes(api, gitH)
 	registerWorkspaceRoutes(api, workspaceH)
+	registerDashboardRoutes(api, dashboardH)
 
 	return r
 }

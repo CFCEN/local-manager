@@ -3,16 +3,19 @@ package model
 import "time"
 
 type GitProject struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	Path      string    `json:"path"`
-	Branch    string    `json:"branch"`
-	Remote    string    `json:"remote"`
-	GroupID   *int64    `json:"groupId"`
-	RAGPath   string    `json:"ragPath"`
-	IndexPath string    `json:"indexPath"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID         int64     `json:"id"`
+	Name       string    `json:"name"`
+	Path       string    `json:"path"`
+	Branch     string    `json:"branch"`
+	Remote     string    `json:"remote"`
+	GroupID    *int64    `json:"groupId"`
+	GroupName  string    `json:"groupName"`
+	Status     string    `json:"status,omitempty"`
+	LastCommit string    `json:"lastCommit,omitempty"`
+	RAGPath    string    `json:"ragPath"`
+	IndexPath  string    `json:"indexPath"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 type GitProjectDetail struct {
@@ -51,14 +54,26 @@ type UpdateGitProjectRequest struct {
 }
 
 type GitGroup struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	RAGPath     string    `json:"ragPath"`
-	IndexPath   string    `json:"indexPath"`
-	ProjectCount int64    `json:"projectCount"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	RAGPath      string    `json:"ragPath"`
+	IndexPath    string    `json:"indexPath"`
+	ProjectCount int64     `json:"projectCount"`
+	ContextCount int64     `json:"contextCount"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// GitProjectStatusItem is a lightweight status payload for batch enrich.
+type GitProjectStatusItem struct {
+	ID         int64  `json:"id"`
+	Status     string `json:"status"`
+	LastCommit string `json:"lastCommit"`
+}
+
+type BatchGitStatusRequest struct {
+	IDs []int64 `json:"ids"`
 }
 
 type CreateGitGroupRequest struct {
