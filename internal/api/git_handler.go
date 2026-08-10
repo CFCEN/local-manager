@@ -308,10 +308,6 @@ func (h *GitHandler) CreateContext(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, ErrCodeBadRequest, "invalid request body")
 		return
 	}
-	if req.RAGPath == "" || req.IndexPath == "" {
-		WriteError(w, http.StatusBadRequest, ErrCodeBadRequest, "ragPath and indexPath are required")
-		return
-	}
 	c, err := h.wsSvc.CreateContext(groupID, req)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, ErrCodeInternal, err.Error())

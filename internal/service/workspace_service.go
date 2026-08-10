@@ -55,18 +55,17 @@ func (s *WorkspaceService) GetContext(contextID int64) (*model.ProjectContext, e
 }
 
 func (s *WorkspaceService) CreateContext(groupID int64, req model.CreateContextRequest) (*model.ProjectContext, error) {
-	if req.RAGPath == "" || req.IndexPath == "" {
-		return nil, fmt.Errorf("ragPath and indexPath are required")
+	group, err := s.repo.GetGroupByID(groupID)
+	if err != nil {
+		return nil, err
+	}
+	if group == nil {
+		return nil, fmt.Errorf("group not found")
 	}
 
-	// Resolve to absolute paths for consistent storage
-	ragPath, err := filepath.Abs(req.RAGPath)
+	ragPath, indexPath, err := s.resolveContextPaths(group, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve ragPath: %w", err)
-	}
-	indexPath, err := filepath.Abs(req.IndexPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve indexPath: %w", err)
+		return nil, err
 	}
 
 	// Ensure directories exist
@@ -125,6 +124,38 @@ func (s *WorkspaceService) DeleteContext(contextID int64) error {
 }
 
 // --- Helpers ---
+
+func (s *WorkspaceService) resolveContextPaths(group *model.GitGroup, req model.CreateContextRequest) (string, string, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return "", "", fmt.Errorf("name is required")
+	}
+	if err := filesystem.ValidateFileName(name); err != nil {
+		return "", "", fmt.Errorf("invalid context name: %w", err)
+	}
+
+	ragPath, err := resolvePathUnderBase(group.RAGPath, name)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve ragPath: %w", err)
+	}
+	indexPath, err := resolvePathUnderBase(group.IndexPath, name)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve indexPath: %w", err)
+	}
+	return ragPath, indexPath, nil
+}
+
+func resolvePathUnderBase(basePath, name string) (string, error) {
+	if strings.TrimSpace(basePath) == "" {
+		return "", fmt.Errorf("group base path is empty")
+	}
+
+	base, err := filepath.Abs(basePath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, name), nil
+}
 
 // resolveContextDir returns the absolute directory path for the given type.
 func (s *WorkspaceService) resolveContextDir(contextID int64, fileType string) (string, error) {

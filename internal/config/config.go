@@ -12,7 +12,7 @@ type AppConfig struct {
 }
 
 func Load() *AppConfig {
-	root := envOrDefault("WORKSPACE_ROOT", "../workspace")
+	root := envOrDefault("WORKSPACE_ROOT", defaultWorkspaceRoot())
 	if abs, err := filepath.Abs(root); err == nil {
 		root = abs
 	}
@@ -21,6 +21,14 @@ func Load() *AppConfig {
 		DBPath:        envOrDefault("DB_PATH", "data/workspace.db"),
 		WorkspaceRoot: root,
 	}
+}
+
+func defaultWorkspaceRoot() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "workspace"
+	}
+	return filepath.Join(home, ".local-dev-workspace", "workspace")
 }
 
 func envOrDefault(key, fallback string) string {

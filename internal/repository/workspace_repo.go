@@ -11,6 +11,16 @@ type WorkspaceRepo struct{ db *sql.DB }
 
 func NewWorkspaceRepo() *WorkspaceRepo { return &WorkspaceRepo{db: DB} }
 
+func (r *WorkspaceRepo) GetGroupByID(id int64) (*model.GitGroup, error) {
+	var g model.GitGroup
+	err := r.db.QueryRow(`SELECT id, name, description, rag_path, index_path, created_at, updated_at, 0 as project_count FROM git_groups WHERE id=?`, id).
+		Scan(&g.ID, &g.Name, &g.Description, &g.RAGPath, &g.IndexPath, &g.CreatedAt, &g.UpdatedAt, &g.ProjectCount)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &g, err
+}
+
 func (r *WorkspaceRepo) ListContextsByGroup(groupID int64) ([]model.ProjectContext, error) {
 	rows, err := r.db.Query(`SELECT id, group_id, name, rag_path, index_path, index_status, last_indexed_at, created_at, updated_at FROM project_contexts WHERE group_id=? ORDER BY created_at`, groupID)
 	if err != nil {
