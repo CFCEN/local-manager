@@ -23,6 +23,8 @@ func NewProcessManager() *ProcessManager {
 // Do not use an interactive shell (-i) here: backend-launched background jobs do
 // not own the foreground terminal, and interactive zsh job control can suspend
 // the shell with STAT=T when startup scripts or child commands touch the TTY.
+// It sources /Users/tencent/.zshrc before running commands so tools configured
+// in the user's interactive shell, such as w2, are available to managed apps.
 // It returns the long-lived child PID when a CLI daemonizes and prints one,
 // otherwise it returns the shell PID.
 // stdout/stderr are redirected to the given file paths if non-empty.
@@ -41,7 +43,8 @@ func (pm *ProcessManager) Start(command, workDir, envJSON string, stdoutPath, st
 		workDir = resolved
 	}
 
-	cmd := exec.Command("/bin/zsh", "-lc", command)
+	shellCommand := fmt.Sprintf("source /Users/tencent/.zshrc && { %s\n}", command)
+	cmd := exec.Command("/bin/zsh", "-lc", shellCommand)
 	cmd.Dir = workDir
 	cmd.Env = env
 
