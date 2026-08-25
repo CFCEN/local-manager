@@ -19,7 +19,10 @@ func NewProcessManager() *ProcessManager {
 	return &ProcessManager{}
 }
 
-// Start launches a command via /bin/zsh -ilc (interactive login shell).
+// Start launches a command via /bin/zsh -lc (non-interactive login shell).
+// Do not use an interactive shell (-i) here: backend-launched background jobs do
+// not own the foreground terminal, and interactive zsh job control can suspend
+// the shell with STAT=T when startup scripts or child commands touch the TTY.
 // It returns the long-lived child PID when a CLI daemonizes and prints one,
 // otherwise it returns the shell PID.
 // stdout/stderr are redirected to the given file paths if non-empty.
@@ -38,7 +41,7 @@ func (pm *ProcessManager) Start(command, workDir, envJSON string, stdoutPath, st
 		workDir = resolved
 	}
 
-	cmd := exec.Command("/bin/zsh", "-ilc", command)
+	cmd := exec.Command("/bin/zsh", "-lc", command)
 	cmd.Dir = workDir
 	cmd.Env = env
 
