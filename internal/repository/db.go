@@ -127,10 +127,43 @@ func ensureSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_project_contexts_group_id ON project_contexts(group_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_application_runs_application_id ON application_runs(application_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_application_runs_status ON application_runs(status)`,
+		`CREATE TABLE IF NOT EXISTS automation_adapters (id INTEGER PRIMARY KEY AUTOINCREMENT, adapter_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', version TEXT NOT NULL DEFAULT '', online INTEGER NOT NULL DEFAULT 0, last_seen DATETIME NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS automation_projects (id INTEGER PRIMARY KEY AUTOINCREMENT, adapter_id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL DEFAULT '{}', updated_at DATETIME NOT NULL, UNIQUE(adapter_id, project_id))`,
+		`CREATE TABLE IF NOT EXISTS automation_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, adapter_id TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL DEFAULT '{}', cursor TEXT NOT NULL DEFAULT '', updated_at DATETIME NOT NULL, UNIQUE(adapter_id, session_id))`,
+		`CREATE TABLE IF NOT EXISTS automation_events (id INTEGER PRIMARY KEY AUTOINCREMENT, adapter_id TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '', event_id TEXT NOT NULL, type TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}', created_at DATETIME NOT NULL, UNIQUE(adapter_id, event_id))`,
+		`CREATE TABLE IF NOT EXISTS automation_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, adapter_id TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '', action_id TEXT NOT NULL, type TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'pending', result TEXT NOT NULL DEFAULT '{}', created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, UNIQUE(adapter_id, action_id))`,
+		`CREATE INDEX IF NOT EXISTS idx_automation_events_session ON automation_events(adapter_id, session_id, id)`,
+		`CREATE TABLE IF NOT EXISTS automation_operations (id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL UNIQUE, adapter_id TEXT NOT NULL, session_id TEXT NOT NULL, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '{}', result TEXT NOT NULL DEFAULT '{}', created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
 	}
 
 	for _, statement := range statements {
 		if _, err := DB.Exec(statement); err != nil {
+			return err
+		}
+	}
+	var hasCursor bool
+	rows, err := DB.Query(`PRAGMA table_info(automation_sessions)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "cursor" {
+			hasCursor = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !hasCursor {
+		if _, err := DB.Exec(`ALTER TABLE automation_sessions ADD COLUMN cursor TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 	}

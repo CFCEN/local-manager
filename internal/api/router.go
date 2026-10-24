@@ -21,6 +21,8 @@ func NewRouter(cfg *config.AppConfig) *mux.Router {
 	appRepo := repository.NewApplicationRepo()
 	gitRepo := repository.NewGitRepo()
 	workspaceRepo := repository.NewWorkspaceRepo()
+	dataTestRepo := repository.NewDataTestRepo()
+	automationRepo := repository.NewAutomationRepo()
 
 	// System services
 	pm := process.NewProcessManager()
@@ -32,6 +34,9 @@ func NewRouter(cfg *config.AppConfig) *mux.Router {
 	gitSvc := service.NewGitService(gitRepo, cfg.WorkspaceRoot)
 	workspaceSvc := service.NewWorkspaceService(workspaceRepo, cfg.WorkspaceRoot)
 	dashboardSvc := service.NewDashboardService(appSvc, gitSvc, logSvc, configSvc)
+	dataTestSvc := service.NewDataTestService(dataTestRepo)
+	automationHub := service.NewAutomationHub()
+	automationSvc := service.NewAutomationService(automationRepo, automationHub)
 
 	// Monitor
 	monitor := process.NewApplicationMonitor(pm, appRepo)
@@ -44,6 +49,8 @@ func NewRouter(cfg *config.AppConfig) *mux.Router {
 	gitH := NewGitHandler(gitSvc, workspaceSvc)
 	workspaceH := NewWorkspaceHandler(workspaceSvc)
 	dashboardH := NewDashboardHandler(dashboardSvc)
+	dataTestH := NewDataTestHandler(dataTestSvc)
+	automationH := NewAutomationHandler(automationSvc, automationHub, cfg.AutomationToken, cfg.AllowedOrigins)
 
 	api := r.PathPrefix("/api").Subrouter()
 
@@ -53,6 +60,8 @@ func NewRouter(cfg *config.AppConfig) *mux.Router {
 	registerGitRoutes(api, gitH)
 	registerWorkspaceRoutes(api, workspaceH)
 	registerDashboardRoutes(api, dashboardH)
+	registerDataTestRoutes(api, dataTestH)
+	registerAutomationRoutes(api, automationH)
 
 	return r
 }
