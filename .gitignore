@@ -1,3 +1,9 @@
 workspace/**
 backend/data/**
 test/**
+.idea
+.claude
+data
+bin/
+server.pid
+config.json

@@ -1,0 +1,11 @@
+{
+  "port": "9527",
+  "dbPath": "data/workspace.db",
+  "workspaceRoot": "ca20ece30f75db5f8b4843aee2eb4d4ad2a2b1c27dbae3209276a7dce91ced8d",
+  "automationToken": "replace-with-your-local-token",
+  "host": "127.0.0.1",
+  "allowedOrigins": [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+  ]
+}

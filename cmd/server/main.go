@@ -16,9 +16,9 @@ func main() {
 	defer repository.CloseDB()
 
 	router := api.NewRouter(cfg)
-	handler := api.CORSWrapper(router)
+	handler := api.CORSWrapper(router, cfg.AllowedOrigins)
 
-	addr := "127.0.0.1:" + cfg.Port
+	addr := cfg.Host + ":" + cfg.Port
 	log.Printf("Local Dev Workspace starting on http://%s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("server failed: %v", err)
